@@ -4,4 +4,4 @@
  :language :clojure
  :license "MIT"
  :tags ["hive-rss" "rss" "atom" "feeds" "ingestion" "scheduler" "addon"]
- :carto {:source-roots ["dev" "resources" "src" "test"]}}
+ :carto {:source-roots ["dev" "resources" "src" "test" "test/resources"]}}
