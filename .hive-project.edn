@@ -1,0 +1,7 @@
+{:project-id "hive-rss"
+ :parent "hive-ingestor"
+ :description "RSS 2.0 / Atom feeds as a hive IAddon: an `rss` ingestion source, and a scheduler inside the addon that polls subscribed feeds N times a day and files each new item into hive memory, deduplicated."
+ :language :clojure
+ :license "MIT"
+ :tags ["hive-rss" "rss" "atom" "feeds" "ingestion" "scheduler" "addon"]
+ :carto {:source-roots ["dev" "resources" "src" "test"]}}

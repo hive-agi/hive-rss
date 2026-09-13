@@ -1,0 +1,14 @@
+{:addon/id           "hive.rss"
+ :addon/kind         :addon
+ :addon/type         :native
+ :addon/init-ns      "hive-rss.addon"
+ :addon/init-fn      "addon-ctor"
+ :addon/capabilities #{:tools :sources :health-reporting}
+ :addon/config       {:rss/fetches-per-day 1
+                      :rss/feeds [{:feed/id "hive-store"
+                                   :feed/url "https://store.hive-mcp.com/api/feed"
+                                   :feed/tags ["hive-store" "releases"]}]}
+ :addon/description  "RSS and Atom feeds: an rss ingestion source, and a scheduler inside the addon that polls subscribed feeds N times a day and files new items into hive memory."
+ :addon/license      "MIT"
+ :addon/maturity     :experimental
+ :addon/trust-class  :foss}
