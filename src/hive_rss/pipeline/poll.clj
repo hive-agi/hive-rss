@@ -39,7 +39,8 @@
           items))
 
 (defn poll-feed!
-  "Poll `subscription` once. Returns `{:state feed-state' :report report}`.
+  "Poll `subscription` once, with its `:feed/auth` when it has one. Returns
+   `{:state feed-state' :report report}`.
 
    An item's key joins the seen set only once it is in memory (created or
    already there), so an item the store refused is offered again next poll. A
@@ -49,8 +50,9 @@
   (let [t (now)
         base (merge {:seen #{}} feed-state)
         fetched (fetch (:feed/url subscription)
-                       {:etag (:etag base) :last-modified (:last-modified base)
-                        :timeout-ms (:rss/timeout-ms settings) :max-bytes (:rss/max-bytes settings)})
+                       (cond-> {:etag (:etag base) :last-modified (:last-modified base)
+                                :timeout-ms (:rss/timeout-ms settings) :max-bytes (:rss/max-bytes settings)}
+                         (:feed/auth subscription) (assoc :auth (:feed/auth subscription))))
         failed (fn [res]
                  {:state (assoc base :last-attempt-at t :last-status :error :last-error (error-text res))
                   :report {:feed (:feed/id subscription) :status :error :error (error-text res)}})]

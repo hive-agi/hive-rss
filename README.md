@@ -47,7 +47,7 @@ Out of the box it subscribes to the hive store's release feed,
 
 | key | default | meaning |
 |-----|---------|---------|
-| `:rss/feeds` | hive-store releases | URLs, or maps with `:feed/url`, `:feed/id`, `:feed/tags` |
+| `:rss/feeds` | hive-store releases | URLs, or maps with `:feed/url`, `:feed/id`, `:feed/tags`, `:feed/auth` |
 | `:rss/fetches-per-day` | `1` | polls per feed per day, 1 to 96 |
 | `:rss/sink` | `"auto"` | where new items go, see below |
 | `:rss/project-id` | `"hive-rss"` | memory scope |
@@ -61,6 +61,40 @@ Out of the box it subscribes to the hive store's release feed,
 
 A config that fails validation fails `initialize!` with the reasons; nothing
 starts.
+
+### Feeds that need a key
+
+The hive store feed lists open packages to anybody and adds the private ones
+for a hive key. Give a feed `:feed/auth`:
+
+```clojure
+:rss/feeds [{:feed/url "https://store.hive-mcp.com/api/feed"
+             :feed/auth {:secret-env "HIVE_STORE_KEY"}}]      ; HTTP Basic, key from the environment
+```
+
+| `:feed/auth` key | meaning |
+|------------------|---------|
+| `:secret-env` | environment variable holding the key (preferred) |
+| `:secret` | the key inline |
+| `:scheme` | `"basic"` (default) or `"bearer"` |
+| `:username` | Basic user, default `hive-rss`; the store ignores it |
+
+A URL with `user:key@` in it works too. Either way the key is taken out of the
+URL, so feed ids, the state file, memory entries, `rss status` and error
+messages never contain it; a key prints as `#secret[redacted]`. It is sent only
+to the feed's own origin: a redirect elsewhere is followed without it. An unset
+`:secret-env` fails `initialize!` naming the variable.
+
+A refused key is a poll error with the server's reason, for example
+`rss/http-status: 402 with credential: deny/subscription-inactive`, not a
+quietly shorter feed. The `rss` ingestion source uses the same credential when
+its `rss-url` is a configured feed.
+
+To check a store from this side, anonymously and with a key:
+
+```bash
+HIVE_STORE_KEY=hv_live_... clojure -M:dev -m hive-rss.store-feed-check https://store.hive-mcp.com/api/feed
+```
 
 ## Schedule
 

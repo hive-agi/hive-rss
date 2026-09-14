@@ -7,6 +7,7 @@
    strings a JSON config carries (\"rss/feeds\", \"url\", \"id\")."
   (:require [clojure.string :as str]
             [hive-dsl.result :as r]
+            [hive-rss.promote.credential :as credential]
             [hive-rss.schema :as schema]
             [malli.core :as m]
             [malli.error :as me]))
@@ -41,15 +42,27 @@
   (some #(get m %) ks))
 
 (defn subscription
-  "A Subscription from a URL string or a feed map, or nil when it has no URL."
-  [feed]
-  (let [url (if (string? feed) feed (lookup feed :feed/url :url "feed/url" "url"))
-        id (when (map? feed) (lookup feed :feed/id :id "feed/id" "id"))
-        tags (when (map? feed) (lookup feed :feed/tags :tags "feed/tags" "tags"))]
-    (when-not (str/blank? (str url))
-      (cond-> {:feed/id (if (str/blank? (str id)) (slug url) (str id))
-               :feed/url (str/trim (str url))}
-        (seq tags) (assoc :feed/tags (mapv str tags))))))
+  "A Subscription from a URL string or a feed map, or nil when it has no URL.
+
+   Credentials come from the map's `:feed/auth` (resolved against `env`) or
+   from `user:secret@` in the URL, which is removed from the URL either way.
+   A `:feed/auth` that cannot be resolved leaves `::auth-problem` on the
+   subscription for `settings` to refuse; it names the problem, not the key."
+  ([feed] (subscription feed {}))
+  ([feed env]
+   (let [raw (if (string? feed) feed (lookup feed :feed/url :url "feed/url" "url"))
+         id (when (map? feed) (lookup feed :feed/id :id "feed/id" "id"))
+         tags (when (map? feed) (lookup feed :feed/tags :tags "feed/tags" "tags"))
+         auth (when (map? feed) (lookup feed :feed/auth :auth "feed/auth" "auth"))
+         {:keys [url credential]} (credential/split-url raw)
+         resolved (when (some? auth) (credential/from-config auth env))]
+     (when-not (str/blank? url)
+       (cond-> {:feed/id (if (str/blank? (str id)) (slug url) (str id))
+                :feed/url url}
+         (seq tags) (assoc :feed/tags (mapv str tags))
+         credential (assoc :feed/auth credential)
+         (and resolved (r/ok? resolved)) (assoc :feed/auth (:ok resolved))
+         (and resolved (r/err? resolved)) (assoc ::auth-problem (:reason resolved)))))))
 
 (defn default-state-file
   "Where feed state lives: `$XDG_STATE_HOME/hive-rss/state.edn`, else under
@@ -64,7 +77,8 @@
 (defn settings
   "Result of the Settings for `config` under environment `env` (a string map).
    Unknown keys are ignored; a feed listed twice by id keeps its first entry.
-   Error `:rss/invalid-config` carries the humanized problems."
+   Error `:rss/invalid-config` carries the humanized problems, and for a feed
+   whose `:feed/auth` cannot be resolved, the reason by feed id."
   [config env]
   (let [picked (into {}
                      (keep (fn [k]
@@ -73,13 +87,22 @@
                      setting-keys)
         merged (merge defaults {:rss/state-file (default-state-file env)} picked)
         feeds (->> (:rss/feeds merged)
-                   (keep subscription)
+                   (keep #(subscription % env))
                    (reduce (fn [acc f] (if (some #(= (:feed/id f) (:feed/id %)) acc) acc (conj acc f))) []))
+        auth-problems (into {} (keep (fn [f] (when-let [p (::auth-problem f)] [(:feed/id f) p]))) feeds)
         s (assoc merged :rss/feeds feeds)]
-    (if (schema/valid-settings? s)
+    (cond
+      (seq auth-problems)
+      (r/err :rss/invalid-config {:problems {:rss/feeds {:feed/auth auth-problems}}})
+
+      (schema/valid-settings? s)
       (r/ok s)
+
+      :else
       (r/err :rss/invalid-config
              {:problems (-> (schema/explain-settings s) me/humanize)}))))
 
 (m/=> slug [:=> [:cat :any] schema/NonBlank])
-(m/=> subscription [:=> [:cat :any] [:maybe schema/Subscription]])
+(m/=> subscription [:function
+                    [:=> [:cat :any] [:maybe :map]]
+                    [:=> [:cat :any [:maybe [:map-of :string :string]]] [:maybe :map]]])

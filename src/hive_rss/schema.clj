@@ -13,13 +13,46 @@
 (def EpochSeconds
   [:int {:min 0}])
 
+(deftype Secret [^String value]
+  Object
+  (toString [_] "#secret[redacted]")
+  (equals [_ other] (and (instance? Secret other) (= value (.-value ^Secret other))))
+  (hashCode [_] (hash [::secret value])))
+
+(defmethod print-method Secret [_ ^java.io.Writer w]
+  (.write w "#secret[redacted]"))
+
+(defn secret?
+  "Whether `x` is a Secret."
+  [x]
+  (instance? Secret x))
+
+(def AuthScheme
+  [:enum :basic :bearer])
+
+(def Credential
+  "What a feed that answers only to a key is fetched with. The secret prints
+   as `#secret[redacted]`."
+  [:map {:closed true}
+   [:auth/scheme AuthScheme]
+   [:auth/username :string]
+   [:auth/secret [:fn secret?]]])
+
+(def CredentialUrl
+  "An http(s) URL with any `user:secret@` split off."
+  [:map {:closed true}
+   [:url :string]
+   [:credential [:maybe Credential]]])
+
 (def Subscription
-  "One feed the scheduler polls. `:feed/id` names it in tags and state; it
-   defaults to a slug of the URL."
+  "One feed the scheduler polls. `:feed/id` names it in tags and state and
+   defaults to a slug of the URL. The URL never carries userinfo; a key
+   travels as `:feed/auth`."
   [:map
    [:feed/id NonBlank]
-   [:feed/url HttpUrl]
-   [:feed/tags {:optional true} [:vector NonBlank]]])
+   [:feed/url [:and HttpUrl [:not [:re #"^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*@"]]]]
+   [:feed/tags {:optional true} [:vector NonBlank]]
+   [:feed/auth {:optional true} Credential]])
 
 (def Item
   [:map

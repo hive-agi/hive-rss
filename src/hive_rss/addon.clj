@@ -102,7 +102,8 @@
 ;; status
 
 (defn status
-  "What the addon knows: settings summary, each feed's state and next poll."
+  "What the addon knows: settings summary, each feed's state and next poll.
+   A feed with credentials shows its scheme, never the secret."
   [{:keys [state]}]
   (let [{:keys [settings feed-state last-pass lifecycle errors]} @state]
     (if-not settings
@@ -118,7 +119,7 @@
          :ingestor-port? (contains? (:deps @state) :deliver!)
          :state-file (:rss/state-file settings)
          :last-pass last-pass
-         :feeds (mapv (fn [{:feed/keys [id url]}]
+         :feeds (mapv (fn [{:feed/keys [id url auth]}]
                         (let [fs (get feed-state id {})
                               due (if (schedule/feed-due? t fs period)
                                     t
@@ -126,12 +127,13 @@
                                          (if-let [a (:last-attempt-at fs)]
                                            (+ a (schedule/retry-seconds period))
                                            0)))]
-                          {:id id :url url
-                           :seen (count (:seen fs))
-                           :last-poll-at (:last-poll-at fs)
-                           :last-status (:last-status fs)
-                           :last-error (:last-error fs)
-                           :next-poll-in-seconds (max 0 (- due t))}))
+                          (cond-> {:id id :url url
+                                   :seen (count (:seen fs))
+                                   :last-poll-at (:last-poll-at fs)
+                                   :last-status (:last-status fs)
+                                   :last-error (:last-error fs)
+                                   :next-poll-in-seconds (max 0 (- due t))}
+                            auth (assoc :auth (name (:auth/scheme auth))))))
                       (:rss/feeds settings))}))))
 
 ;; ---------------------------------------------------------------------------

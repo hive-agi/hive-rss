@@ -55,6 +55,18 @@
         (is (= 0 (:new report2)))
         (is (= 3 (count @filed)))))))
 
+(deftest a-feed-with-credentials-is-fetched-with-them
+  (let [{:keys [deps requests]} (harness {:responses [ok-body ok-body]})
+        s (:ok (config/settings {:rss/feeds ["https://store.hive-mcp.com/api/feed"
+                                             {:feed/url "https://store.hive-mcp.com/api/feed?package=hive-carto"
+                                              :feed/auth {:secret-env "K"}}]}
+                                {"HOME" "/tmp" "K" "hv_live_k"}))
+        [open keyed] (:rss/feeds s)]
+    (poll/poll-feed! deps s open {})
+    (poll/poll-feed! deps s keyed {})
+    (is (not (contains? (second (first @requests)) :auth)) "an open feed sends nothing")
+    (is (= (:feed/auth keyed) (:auth (second (second @requests)))))))
+
 (deftest not-modified-is-a-successful-poll
   (let [{:keys [deps]} (harness {:responses [(r/ok {:status :not-modified})]})
         {st :state report :report} (poll/poll-feed! deps (settings) sub {:seen #{"x"} :etag "e"})]

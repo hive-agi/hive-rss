@@ -8,7 +8,8 @@
             [hive-rss.promote.entry :as entry]
             [hive-rss.promote.parse :as parse]
             [hive-spi.ingest.model :as model]
-            [hive-spi.ingest.ports :as ingest])
+            [hive-spi.ingest.ports :as ingest]
+            [hive-rss.promote.credential :as credential])
   (:import (java.nio.charset StandardCharsets)
            (java.util UUID)))
 
@@ -53,19 +54,21 @@
   (source-id [_] source-id)
   (fetch-documents [_ opts]
     (let [opts (merge defaults opts)
-          url (some-> (or (get opts "rss-url") (:rss-url opts) (get opts "rss_url") (:rss_url opts)) str str/trim)
+          raw (some-> (or (get opts "rss-url") (:rss-url opts) (get opts "rss_url") (:rss_url opts)) str)
+          {url :url auth :credential} (credential/for-url (:rss/feeds defaults) raw)
           wanted (wanted-keys opts)
           narrow (fn [feed]
                    (update feed :feed/items
                            #(->> % (filter (fn [it] (or (nil? wanted) (wanted (:item/key it)))))
                                  (reduce (fn [acc it] (if (some (fn [x] (= (:item/key x) (:item/key it))) acc) acc (conj acc it))) []))))]
-      (if-not (and url (re-matches #"^https?://\S+$" url))
+      (if-not (and raw (re-matches #"^https?://\S+$" url))
         (r/err :rss/invalid-url {:reason "rss-url must be an http(s) URL"})
         (if-let [feed (and cached-feed (cached-feed url))]
           ;; The scheduler fetched this feed moments ago; do not fetch it twice.
           (documents url (narrow feed))
-          (let [fetched (fetch url {:timeout-ms (:rss/timeout-ms defaults 20000)
-                                    :max-bytes (:rss/max-bytes defaults (* 5 1024 1024))})]
+          (let [fetched (fetch url (cond-> {:timeout-ms (:rss/timeout-ms defaults 20000)
+                                            :max-bytes (:rss/max-bytes defaults (* 5 1024 1024))}
+                                     auth (assoc :auth auth)))]
             (cond
               (r/err? fetched) fetched
               (= :not-modified (:status (:ok fetched))) (r/ok [])

@@ -10,20 +10,36 @@
             [hive-rss.promote.parse :as parse]
             [hive-rss.promote.parse-test :refer [hive-store-xml]]
             [hive-rss.promote.schedule]
-            [malli.instrument :as mi]))
+            [malli.instrument :as mi]
+            [hive-rss.promote.credential]))
 
 ;; SPDX-License-Identifier: MIT
 
 (def instrumented-nses
-  '#{hive-rss.promote.config hive-rss.promote.entry hive-rss.promote.parse hive-rss.promote.schedule})
+  '#{hive-rss.promote.config hive-rss.promote.credential hive-rss.promote.entry
+     hive-rss.promote.parse hive-rss.promote.schedule})
 
 (use-fixtures :once
   (fn [t]
     (mi/collect! {:ns instrumented-nses})
-    (mi/instrument! {:filters [(mi/-filter-ns 'hive-rss.promote.config 'hive-rss.promote.entry
-                                              'hive-rss.promote.parse 'hive-rss.promote.schedule)]
+    (mi/instrument! {:filters [(apply mi/-filter-ns instrumented-nses)]
                      :report (fn [type data] (throw (ex-info (str "contract " type) data)))})
     (try (t) (finally (mi/unstrument! nil)))))
+
+(deftest a-keyed-poll-honours-every-contract
+  (let [settings (:ok (hive-rss.promote.config/settings
+                       {:rss/feeds ["https://feed:hv_live_k@store.hive-mcp.com/api/feed"
+                                    {:feed/url "https://store.test/f" :feed/auth {:scheme "bearer" :secret-env "K"}}]}
+                       {"HOME" "/tmp" "K" "t"}))
+        auths (atom [])
+        deps {:fetch (fn [_ opts] (swap! auths conj (:auth opts)) (r/ok {:status :ok :body (hive-store-xml)}))
+              :file! (fn [_] (r/ok {:id "x" :duplicate? false}))
+              :save! identity
+              :now (constantly 1789329000)}]
+    (poll/poll-due! deps settings {} {})
+    (is (= [:basic :bearer] (mapv :auth/scheme @auths)))
+    (is (= "https://store.test/f"
+           (:url (hive-rss.promote.credential/for-url (:rss/feeds settings) "https://store.test/f"))))))
 
 (deftest a-poll-honours-every-contract
   (let [sub {:feed/id "hive-store" :feed/url "https://store.hive-mcp.com/api/feed"}
