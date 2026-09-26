@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.6"}
-        metosin/malli {:mvn/version "0.20.1"}
+        metosin/malli {:mvn/version "0.20.2"}
         org.clojure/data.json {:mvn/version "2.5.2"}
         io.github.hive-agi/hive-addon {:mvn/version "1.0.15"}
         io.github.hive-agi/hive-spi {:mvn/version "1.4.1"}
