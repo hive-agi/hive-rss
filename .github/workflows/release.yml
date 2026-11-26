@@ -41,9 +41,42 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # Caches the resolved dependency tree across runs, keyed on the files
+      # that declare it.
+      - name: Cache Maven and gitlibs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: deps-${{ runner.os }}-${{ hashFiles('deps.edn', 'bb.edn') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+
       - uses: DeLaGuardo/setup-clojure@13.7.0
         with:
-          cli: latest
+          cli: 1.12.7.1681
+
+      # Licence gate. LICENSE, version.edn :license and the src SPDX headers
+      # must agree, and a published pom can never be retracted, so drift has to
+      # stop the run rather than scroll past as a warning. `:strict true` throws
+      # on hive-build >= the release that added it; the grep keeps an older
+      # pinned hive-build (which ignores :strict and only warns) failing too.
+      - name: Verify licence
+        run: |
+          set -euo pipefail
+          out=$(clojure -T:build verify-license :strict true 2>&1) || { printf '%s\n' "$out"; exit 1; }
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q 'WARNING: license inconsistency'; then
+            echo "::error::licence drift: LICENSE, version.edn and SPDX headers disagree"
+            exit 1
+          fi
 
       # Gate BEFORE the bump: a published pom is immutable, so a red suite
       # must not be able to mint a version, tag it and ship it.
@@ -70,6 +103,15 @@ jobs:
       - name: Bump patch version
         run: clojure -T:build bump :level :patch
 
+      - name: Deploy
+        env:
+          # deps-deploy and hive-build both read CLOJARS_PASSWORD; the org
+          # secret is CLOJARS_DEPLOY_TOKEN. Map one onto the other.
+          CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
+          CLOJARS_PASSWORD: ${{ secrets.CLOJARS_DEPLOY_TOKEN }}
+        run: clojure -T:build deploy
+
+      # After Deploy: a tag means "this version is in the registry".
       - name: Tag
         run: |
           set -euo pipefail
@@ -81,11 +123,3 @@ jobs:
           # Annotated, so the next run's tag scan and `git describe` see it.
           git tag -a "v$VER" -m "release $VER"
           git push origin "refs/tags/v$VER"
-
-      - name: Deploy
-        env:
-          # deps-deploy and hive-build both read CLOJARS_PASSWORD; the org
-          # secret is CLOJARS_DEPLOY_TOKEN. Map one onto the other.
-          CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
-          CLOJARS_PASSWORD: ${{ secrets.CLOJARS_DEPLOY_TOKEN }}
-        run: clojure -T:build deploy
